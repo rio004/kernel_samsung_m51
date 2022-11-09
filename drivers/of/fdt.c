@@ -82,6 +82,32 @@ void of_fdt_limit_memory(int limit)
 }
 
 /**
+ * of_fdt_get_ddrtype - Return the type of ddr (4/5) on the current device
+ *
+ * On match, returns a non-zero positive value which matches the ddr type.
+ * Otherwise returns -ENOENT.
+ */
+int of_fdt_get_ddrtype(void)
+{
+	int memory;
+	int len;
+	int ret;
+	fdt32_t *prop = NULL;
+
+	memory = fdt_path_offset(initial_boot_params, "/memory");
+	if (memory > 0)
+		prop = fdt_getprop_w(initial_boot_params, memory,
+				  "ddr_device_type", &len);
+
+	if (!prop || len != sizeof(u32))
+		return -ENOENT;
+
+	ret = fdt32_to_cpu(*prop);
+
+	return ret;
+}
+
+/**
  * of_fdt_is_compatible - Return true if given node from the given blob has
  * compat in its compatible list
  * @blob: A device tree blob
@@ -577,6 +603,52 @@ void *initial_boot_params;
 
 static u32 of_fdt_crc32;
 
+/*
+ * Reserve memory via command line if needed.
+ */
+static int __init early_memory_reserve(char *p)
+{
+	phys_addr_t base, size;
+	int nomap;
+	char *endp = p;
+
+	while (1) {
+		base = memparse(endp, &endp);
+		if (base && (*endp == ',')) {
+			size = memparse(endp + 1, &endp);
+			if (size && (*endp == ',')) {
+				if (memcmp(endp + 1, "nomap", 5) == 0) {
+					nomap = 1;
+					endp += 6;
+				} else if (memcmp(endp + 1, "map", 3) == 0) {
+					nomap = 0;
+					endp += 4;
+				} else
+					break;
+
+				if (early_init_dt_reserve_memory_arch(base,
+					size, nomap) == 0)
+					pr_debug(
+					"Early reserved memory: region : base %pa, size %ld MiB\n",
+					&base, (unsigned long)size / SZ_1M);
+				else
+					pr_info(
+					"Early reserved memory: failed : base %pa, size %ld MiB\n",
+					&base, (unsigned long)size / SZ_1M);
+
+				if (*endp == ';')
+					endp++;
+				else
+					break;
+			} else
+				break;
+		} else
+			break;
+	}
+	return 0;
+}
+early_param("memrsv", early_memory_reserve);
+
 /**
  * res_mem_reserve_reg() - reserve all memory described in 'reg' property
  */
@@ -705,6 +777,7 @@ void __init early_init_fdt_scan_reserved_mem(void)
 		if (!size)
 			break;
 		early_init_dt_reserve_memory_arch(base, size, 0);
+		record_memsize_reserved(NULL, base, size, 0, 0);
 	}
 
 	of_scan_flat_dt(__fdt_scan_reserved_mem, NULL);
@@ -1190,6 +1263,7 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 {
 	const u64 phys_offset = MIN_MEMBLOCK_ADDR;
+	u64 hole_s;
 
 	if (!PAGE_ALIGNED(base)) {
 		if (size < PAGE_SIZE - (base & ~PAGE_MASK)) {
@@ -1226,6 +1300,12 @@ void __init __weak early_init_dt_add_memory_arch(u64 base, u64 size)
 		base = phys_offset;
 	}
 	memblock_add(base, size);
+	hole_s = base % SZ_256M;
+	if (hole_s)
+		record_memsize_reserved(NULL, base - hole_s, hole_s, 1, 0);
+	hole_s = round_up(base + size, SZ_256M) - (base + size);
+	if (hole_s)
+		record_memsize_reserved(NULL, base + size, hole_s, 1, 0);
 }
 
 int __init __weak early_init_dt_mark_hotplug_memory_arch(u64 base, u64 size)

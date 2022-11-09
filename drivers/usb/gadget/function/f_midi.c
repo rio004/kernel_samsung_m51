@@ -49,7 +49,7 @@ static const char f_midi_longname[] = "MIDI Gadget";
  * stored in 4-bit fields. And as the interface currently only holds one
  * single endpoint, this is the maximum number of ports we can allow.
  */
-#define MAX_PORTS 16
+#define MAX_PORTS 1
 
 /* MIDI message states */
 enum {
@@ -341,7 +341,8 @@ static int f_midi_start_ep(struct f_midi *midi,
 	int err;
 	struct usb_composite_dev *cdev = f->config->cdev;
 
-	usb_ep_disable(ep);
+	if (ep->driver_data)
+		usb_ep_disable(ep);
 
 	err = config_ep_by_speed(midi->gadget, f, ep);
 	if (err) {
@@ -1216,12 +1217,12 @@ static ssize_t alsa_show(struct device *dev,
 	struct usb_function_instance *fi_midi = dev_get_drvdata(dev);
 	struct f_midi *midi;
 
-	if (!fi_midi->f)
+	if (!fi_midi || !fi_midi->f)
 		dev_warn(dev, "f_midi: function not set\n");
 
 	if (fi_midi && fi_midi->f) {
 		midi = func_to_midi(fi_midi->f);
-		if (midi->rmidi && midi->rmidi->card)
+		if (midi->rmidi && midi->card && midi->rmidi->card)
 			return sprintf(buf, "%d %d\n",
 			midi->rmidi->card->number, midi->rmidi->device);
 	}

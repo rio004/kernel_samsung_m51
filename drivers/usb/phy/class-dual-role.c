@@ -82,6 +82,9 @@ static void dual_role_changed_work(struct work_struct *work)
 
 void dual_role_instance_changed(struct dual_role_phy_instance *dual_role)
 {
+	if (!dual_role)
+		return;
+
 	dev_dbg(&dual_role->dev, "%s\n", __func__);
 	pm_wakeup_event(&dual_role->dev, DUAL_ROLE_NOTIFICATION_TIMEOUT);
 	schedule_work(&dual_role->changed_work);
@@ -171,7 +174,7 @@ device_add_failed:
 wakeup_init_failed:
 dev_set_name_failed:
 	put_device(dev);
-	kfree(dual_role);
+//	kfree(dual_role);
 
 	return ERR_PTR(rc);
 }
